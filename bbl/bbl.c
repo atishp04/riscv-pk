@@ -28,6 +28,11 @@ static void filter_dtb(uintptr_t source)
   filter_plic(dest);
   filter_compat(dest, "riscv,clint0");
   filter_compat(dest, "riscv,debug-013");
+
+ // Update hart to remove HLIC.
+  remove_hart_lic((void *)dest);
+  add_soc_lic((void *)dest);
+  update_plic((void *)dest);
 }
 
 void boot_other_hart(uintptr_t unused __attribute__((unused)))

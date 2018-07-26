@@ -73,4 +73,7 @@ extern uint64_t hart_mask;
 void fdt_print(uintptr_t fdt);
 #endif
 
+void remove_hart_lic(void *dtb);
+void add_soc_lic(void *dtb);
+void update_plic(void *dtb);
 #endif

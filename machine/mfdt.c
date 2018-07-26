@@ -1,8 +1,11 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdio.h>
 #include "config.h"
 #include "mfdt.h"
+#include "libfdt.h"
+#include "fdt.h"
 #include "mtrap.h"
 
 static inline uint32_t bswap(uint32_t x)
@@ -624,6 +627,63 @@ void filter_harts(uintptr_t fdt, long *disabled_hart_mask)
   filter.disabled_hart_mask = disabled_hart_mask;
   *disabled_hart_mask = 0;
   fdt_scan(fdt, &cb);
+}
+
+//////////////////////////////////////////// HLIC update /////////////////////////////////////////
+
+void remove_hart_lic(void *dtb)
+{
+  char cpu_dtpath[32];
+  char cpu_intc_dtpath[64];
+  int err, hart = 0;
+  int hlic_offset;
+  uint64_t enabled_hart_mask = hart_mask;
+
+  while(enabled_hart_mask) {
+    if (enabled_hart_mask & 1) {
+      /* add per cpu nodes here */
+      snprintf(cpu_dtpath, 32, "/cpus/cpu@%d", hart);
+      snprintf(cpu_intc_dtpath, 64, "/cpus/cpu@%d/interrupt-controller", hart);
+      hlic_offset = fdt_path_offset(dtb, cpu_intc_dtpath);
+      if (hlic_offset < 0)
+        die("%s: Can't find the local interrupt controller node inside cpu\n", __func__);
+      err = fdt_del_node(dtb, hlic_offset); 
+      if (err)
+        printm("%s: Couldn't delete the HLIC node \n", __func__, err);
+     }
+    enabled_hart_mask = enabled_hart_mask >> 1;
+    hart++;
+  }
+
+}
+
+void add_soc_lic(void *dtb)
+{
+  int soc_offset, slic_offset, max_phandle;
+
+  soc_offset = fdt_path_offset(dtb, "/soc");
+  if (soc_offset < 0 )
+    die("%s: Can't find the soc node \n", __func__, soc_offset);
+  slic_offset = fdt_add_subnode(dtb, soc_offset, "local-interrupt-controller");  
+  if (slic_offset < 0 )
+    printm("%s: Can't find the local interrupt controller node \n", __func__, slic_offset);
+  fdt_setprop_cell(dtb, slic_offset, "#interrupt-cells", 1);
+  fdt_setprop_string(dtb, slic_offset, "compatible", "riscv,cpu-intc");
+  fdt_setprop(dtb, slic_offset, "interrupt-controller", NULL, 0);
+  max_phandle = fdt_get_max_phandle(dtb);
+  fdt_setprop_cell(dtb, slic_offset, "phandle", max_phandle + 1);
+  fdt_setprop_cell(dtb, slic_offset, "linux,phandle", max_phandle + 1);
+}
+
+void update_plic(void *dtb)
+{
+  int local_intc_parent, plic_offset;
+  
+  plic_offset = fdt_path_offset(dtb, "/soc/interrupt-controller");
+  local_intc_parent = fdt_get_phandle(dtb,fdt_path_offset(dtb, "/soc/local-interrupt-controller"));
+  fdt_delprop(dtb, plic_offset, "interrupts-extended");
+  fdt_setprop_cell(dtb, plic_offset, "interrupt-parent", local_intc_parent);
+  fdt_setprop_cell(dtb, plic_offset, "interrupts", 0x9);
 }
 
 //////////////////////////////////////////// PRINT //////////////////////////////////////////////
